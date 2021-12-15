@@ -46,6 +46,8 @@ class MQTTClient:
             if text_payload == "False":
                 text_payload = bool(False)
             print(f"Payload : {text_payload}")
+            tokens = msg.topic.split("/")
+
             if text_payload in ALARM_STATUS.keys():
                 LOGGER.info(f"Security Level update ! Setting to {text_payload}")
                 try:
@@ -64,9 +66,9 @@ class MQTTClient:
                 site_id = msg.topic.split("/")[1]
                 LOGGER.info(f"Stop the Siren On Site ID {site_id}")
                 self.api.stop_alarm(site_id=site_id)
-            elif msg.topic.split("/")[3] == "shutter_state":
-                site_id = msg.topic.split("/")[1]
-                device_id = msg.topic.split("/")[2]
+            elif tokens[3] == "shutter_state":
+                site_id = tokens[1]
+                device_id = tokens[2]
                 if text_payload == "closed":
                     text_payload = "shutter_close"
                 if text_payload == "opened":
@@ -81,9 +83,9 @@ class MQTTClient:
                 # Re Read device
                 sleep(3)
                 self.update_device(site_id=site_id, device_id=device_id)
-            elif msg.topic.split("/")[3] == "snapshot":
-                site_id = msg.topic.split("/")[1]
-                device_id = msg.topic.split("/")[2]
+            elif tokens[3] == "snapshot":
+                site_id = tokens[1]
+                device_id = tokens[2]
                 if text_payload == "True":
                     LOGGER.info("Manual Snapshot")
                     self.api.camera_refresh_snapshot(site_id=site_id, device_id=device_id)
@@ -100,6 +102,15 @@ class MQTTClient:
                         byteArr = bytearray(image)
                         topic = f"{self.config.get('topic_prefix', 'somfyProtect2mqtt')}/{site_id}/{device_id}/snapshot"
                         self.update(topic, byteArr, retain=False, is_json=False)
+            elif tokens[3].startswith("sound_"):
+                _, site_id, device_id, sound, *_ = tokens
+                LOGGER.info(f"Sound request for Site ID: {site_id}, Device ID: {device_id}, Action: {text_payload}")
+                action_device = self.api.device_sound(
+                    site_id=site_id,
+                    device_id=device_id,
+                    sound_ref=text_payload,
+                )
+                LOGGER.info(f"Result: {action_device}")
             else:
                 site_id = msg.topic.split("/")[1]
                 device_id = msg.topic.split("/")[2]

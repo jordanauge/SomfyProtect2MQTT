@@ -1,5 +1,6 @@
 from somfy_protect_api.api.model import Site, Device
 from somfy_protect_api.api.devices.category import Category
+from somfy_protect_api.api.somfy_protect_api import SOUND_REFS
 
 ALARM_STATUS = {
     "partial": "armed_night",
@@ -246,6 +247,15 @@ DEVICE_CAPABILITIES = {
     },
 }
 
+# We add the sensors for the indoor siren sounds:
+
+for sound in SOUND_REFS:
+    DEVICE_CAPABILITIES[f'sound_{sound}'] = {
+        "type": "button",
+        "config": {
+            "payload_press": sound,
+        },
+    }
 
 def ha_discovery_alarm(site: Site, mqtt_config: dict, homeassistant_config: dict):
 
@@ -316,7 +326,6 @@ def ha_discovery_alarm_actions(site: Site, mqtt_config: dict):
 
     return site_config
 
-
 def ha_discovery_devices(
     site_id: str,
     device: Device,
@@ -350,9 +359,22 @@ def ha_discovery_devices(
 
     for config_entry in DEVICE_CAPABILITIES.get(sensor_name).get("config"):
         device_config["config"][config_entry] = DEVICE_CAPABILITIES.get(sensor_name).get("config").get(config_entry)
+
     if device_type == "switch":
         device_config["config"]["command_topic"] = command_topic
     if sensor_name == "snapshot":
+        device_config["config"].pop("value_template")
+
+    # NOTE: the camera snapshot should be a button in theory as it does not have
+    # a state but just triggers a snapshot. Likely this is a switch that does
+    # back to off once the snapshot has been taken. Maybe at the time buttons
+    # did not exist in home assistant.
+
+    # We provision on topic on which to receive commands from anything that can
+    # be actuated : switch, button
+    # value_template is only useful for switches that reflect the remote state
+    if device_type == "button":
+        device_config["config"]["command_topic"] = command_topic
         device_config["config"].pop("value_template")
 
     return device_config

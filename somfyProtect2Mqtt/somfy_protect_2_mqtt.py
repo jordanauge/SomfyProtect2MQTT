@@ -7,7 +7,6 @@ import schedule
 from mqtt import MQTTClient
 from somfy_protect import init_somfy_protect
 from somfy_protect_api.api.devices.category import Category
-from somfy_protect_api.api.devices.outdoor_siren import OutDoorSiren
 from ha_discovery import (
     ha_discovery_alarm,
     ha_discovery_alarm_actions,
@@ -16,6 +15,7 @@ from ha_discovery import (
     DEVICE_CAPABILITIES,
     ALARM_STATUS,
 )
+from somfy_protect_api.api.somfy_protect_api import SOUND_REFS
 
 LOGGER = logging.getLogger(__name__)
 
@@ -165,6 +165,50 @@ class SomfyProtect2Mqtt:
                         retain=True,
                     )
                     if device_config.get("config").get("command_topic"):
+                        self.mqttc.client.subscribe(device_config.get("config").get("command_topic"))
+
+                # Like the camera, we also hook the Indoor Siren because we
+                # don't only show sensors based on attributes, but also add
+                # other entites that we know exist from our API knowledge.
+                # For instance, an indoor siren is able to produce sounds.
+                #
+                # We detect it through the type, which might depend on language.
+                LOGGER.info(f"Device definition {device.device_definition}")
+                if device.device_definition.get("type") == 'siren':
+                    LOGGER.info(f"Found Siren {device.device_definition.get('label')}")
+
+                    # We request the MQTT configuration corresponding to the
+                    # entity we want to create.
+                    #
+                    # The naming is done by home assistant:
+                    # {TYPE}.{DEVICE_TYPE}_{SENSOR_NAME}
+                    #
+                    # For instance, to trigger a OK sound, the corresponding
+                    # entity will be a button: button.indoor_siren_sound_ok
+
+                    for sound in SOUND_REFS:
+                        device_config = ha_discovery_devices(
+                            site_id=site_id,
+                            device=device,
+                            mqtt_config=self.mqtt_config,
+                            sensor_name=f'sound_{sound}',
+                        )
+                        # We send a message to home assistant to inform it about the
+                        # device.
+                        # TODO
+                        #  - do we send an empty payload to later remove the device ?
+                        #  - we might want to remember the topic we register to
+                        #  unregister them at shutdown (by sending an empty
+                        #  topic...
+                        #  - ... or is it better to leave those sensors always
+                        #  in for the automations defined on top ?
+                        self.mqttc.update(
+                            topic=device_config.get("topic"),
+                            payload=device_config.get("config"),
+                            retain=True,
+                        )
+                        # We know the device should provide a command_topic, we subscribe
+                        # to it in order to be able to process commands.
                         self.mqttc.client.subscribe(device_config.get("config").get("command_topic"))
 
     def update_sites_status(self) -> None:
